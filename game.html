@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flappy Spaceship</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050b14;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: manipulation;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background: radial-gradient(circle, #0d1b2a 0%, #050b14 100%);
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #e0e1dd;
+            display: none;
+            background: rgba(13, 27, 42, 0.9);
+            padding: 30px;
+            border: 2px solid #415a77;
+            border-radius: 15px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+        }
+        h1 { margin: 0 0 10px; color: #00d4ff; }
+        .score-text { font-size: 1.5rem; margin-bottom: 20px; }
+        button {
+            padding: 12px 30px;
+            font-size: 1.2rem;
+            background-color: #00d4ff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #050b14;
+        }
+        button:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+
+    <div id="ui-overlay">
+        <h1 id="status-title">GAME OVER</h1>
+        <div class="score-text">Score: <span id="current-score">0</span></div>
+        <div class="score-text">Best: <span id="high-score">0</span></div>
+        <button onclick="resetGame()">LAUNCH AGAIN</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const uiOverlay = document.getElementById('ui-overlay');
+    const scoreSpan = document.getElementById('current-score');
+    const highSpan = document.getElementById('high-score');
+
+    // Game Constants & State
+    let width, height, spaceship, pipes, particles;
+    let score = 0;
+    let highScore = localStorage.getItem('flappyShipHighScore') || 0;
+    let isGameOver = false;
+    let frameCount = 0;
+    let speedMultiplier = 1;
+
+    const GRAVITY = 0.25;
+    const JUMP = -5.5;
+    const PIPE_WIDTH = 60;
+    const PIPE_GAP = 180;
+    const SPAWN_RATE = 100; // frames
+
+    function init() {
+        // Resize canvas to window
+        width = canvas.width = window.innerWidth > 500 ? 400 : window.innerWidth;
+        height = canvas.height = window.innerHeight;
+        
+        spaceship = {
+            x: 50,
+            y: height / 2,
+            w: 50,
+            h: 30,
+            velocity: 0,
+            rotation: 0
+        };
+
+        pipes = [];
+        particles = [];
+        score = 0;
+        speedMultiplier = 1;
+        isGameOver = false;
+        frameCount = 0;
+        uiOverlay.style.display = 'none';
+        
+        requestAnimationFrame(update);
+    }
+
+    function spawnPipe() {
+        const minPipeHeight = 50;
+        const maxPipeHeight = height - PIPE_GAP - minPipeHeight;
+        const topHeight = Math.floor(Math.random() * (maxPipeHeight - minPipeHeight + 1) + minPipeHeight);
+        
+        pipes.push({
+            x: width,
+            top: topHeight,
+            passed: false
+        });
+    }
+
+    function update() {
+        if (isGameOver) return;
+
+        // Physics
+        spaceship.velocity += GRAVITY;
+        spaceship.y += spaceship.velocity;
+        spaceship.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, spaceship.velocity * 0.1));
+
+        // Boundaries
+        if (spaceship.y + spaceship.h > height || spaceship.y < 0) {
+            endGame();
+        }
+
+        // Pipes Logic
+        if (frameCount % Math.floor(SPAWN_RATE / speedMultiplier) === 0) {
+            spawnPipe();
+        }
+
+        for (let i = pipes.length - 1; i >= 0; i--) {
+            pipes[i].x -= (3 * speedMultiplier);
+
+            // Collision Detection
+            if (
+                spaceship.x < pipes[i].x + PIPE_WIDTH &&
+                spaceship.x + spaceship.w > pipes[i].x &&
+                (spaceship.y < pipes[i].top || spaceship.y + spaceship.h > pipes[i].top + PIPE_GAP)
+            ) {
+                endGame();
+            }
+
+            // Scoring
+            if (!pipes[i].passed && pipes[i].x + PIPE_WIDTH < spaceship.x) {
+                pipes[i].passed = true;
+                score++;
+                // Difficulty increase: 5% every 10 points
+                if (score % 10 === 0) {
+                    speedMultiplier *= 1.05;
+                }
+            }
+
+            // Remove off-screen pipes
+            if (pipes[i].x + PIPE_WIDTH < 0) {
+                pipes.splice(i, 1);
+            }
+        }
+
+        draw();
+        frameCount++;
+        requestAnimationFrame(update);
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw Stars (Static Background)
+        ctx.fillStyle = "white";
+        for(let i=0; i<50; i++) {
+            let x = (Math.sin(i) * 0.5 + 0.5) * width;
+            let y = (Math.cos(i * 2) * 0.5 + 0.5) * height;
+            ctx.fillRect(x, y, 1, 1);
+        }
+
+        // Draw Pipes
+        pipes.forEach(p => {
+            ctx.fillStyle = "#415a77";
+            // Top Pipe
+            ctx.fillRect(p.x, 0, PIPE_WIDTH, p.top);
+            // Bottom Pipe
+            ctx.fillRect(p.x, p.top + PIPE_GAP, PIPE_WIDTH, height - (p.top + PIPE_GAP));
+            // Pipe caps
+            ctx.fillStyle = "#00d4ff";
+            ctx.fillRect(p.x - 5, p.top - 10, PIPE_WIDTH + 10, 10);
+            ctx.fillRect(p.x - 5, p.top + PIPE_GAP, PIPE_WIDTH + 10, 10);
+        });
+
+        // Draw Spaceship (Simplified version of your image)
+        ctx.save();
+        ctx.translate(spaceship.x + spaceship.w/2, spaceship.y + spaceship.h/2);
+        ctx.rotate(spaceship.rotation);
+        
+        // Ship Body
+        ctx.fillStyle = "#778da9";
+        ctx.fillRect(-spaceship.w/2, -spaceship.h/2, spaceship.h, spaceship.h); 
+        // Cockpit slope
+        ctx.beginPath();
+        ctx.moveTo(-spaceship.w/2 + 30, -spaceship.h/2);
+        ctx.lineTo(spaceship.w/2, 0);
+        ctx.lineTo(-spaceship.w/2 + 30, spaceship.h/2);
+        ctx.fill();
+
+        // Engine Glow
+        if (spaceship.velocity < 0) {
+            ctx.fillStyle = "#ff006e";
+            ctx.beginPath();
+            ctx.arc(-spaceship.w/2, 0, 8, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        ctx.restore();
+
+        // UI Score
+        ctx.fillStyle = "#00d4ff";
+        ctx.font = "bold 24px Arial";
+        ctx.fillText(`Score: ${score}`, 20, 40);
+    }
+
+    function endGame() {
+        isGameOver = true;
+        if (score > highScore) {
+            highScore = score;
+            localStorage.setItem('flappyShipHighScore', highScore);
+        }
+        scoreSpan.innerText = score;
+        highSpan.innerText = highScore;
+        uiOverlay.style.display = 'block';
+    }
+
+    function resetGame() {
+        init();
+    }
+
+    // Input Listeners
+    const handleInput = (e) => {
+        if (isGameOver) return;
+        spaceship.velocity = JUMP;
+        if(e.cancelable) e.preventDefault();
+    };
+
+    window.addEventListener('keydown', (e) => { if(e.code === 'Space') handleInput(e); });
+    window.addEventListener('touchstart', handleInput);
+    window.addEventListener('mousedown', handleInput);
+
+    // Start the game
+    init();
+
+</script>
+</body>
+</html>
